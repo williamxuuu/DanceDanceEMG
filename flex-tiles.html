@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flex Tiles — EMG Rhythm Game</title>
+<style>
+  /* ============================================================
+     THEME / GLOBAL STYLES
+     Dark arcade look with neon lane accents.
+     ============================================================ */
+  :root {
+    --bg: #07080f;
+    --bg-2: #0d1020;
+    --panel: rgba(20, 24, 44, 0.85);
+    --text: #e8ecff;
+    --muted: #8893bf;
+
+    /* Per-lane neon colors */
+    --lane-leftBicep: #00e5ff;     /* cyan */
+    --lane-rightBicep: #ff3df5;    /* magenta */
+    --lane-leftShoulder: #7cff3d;  /* green */
+    --lane-rightShoulder: #ffae00; /* amber */
+
+    --perfect: #00ffa3;
+    --good: #6cf;
+    --ok: #ffd24a;
+    --miss: #ff4d6d;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: radial-gradient(120% 90% at 50% 0%, var(--bg-2), var(--bg) 70%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #app {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* The play area is a fixed-aspect arcade cabinet feel */
+  #stage {
+    position: relative;
+    width: min(560px, 96vw);
+    height: min(820px, 96vh);
+    background: linear-gradient(180deg, #0a0d1c, #05060d);
+    border: 1px solid rgba(120, 140, 220, 0.18);
+    border-radius: 18px;
+    box-shadow: 0 0 60px rgba(40, 80, 200, 0.15), inset 0 0 80px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  /* ---- Top HUD ---- */
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 30;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 12px 16px;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(5,6,13,0.9), rgba(5,6,13,0));
+  }
+  .hud-block { display: flex; flex-direction: column; gap: 2px; }
+  .hud-block.right { align-items: flex-end; }
+  .hud-label { font-size: 11px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+  .hud-value { font-size: 26px; font-weight: 800; line-height: 1; }
+  #comboValue { color: var(--perfect); }
+  #missPips { display: flex; gap: 5px; margin-top: 4px; }
+  .pip {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid var(--miss);
+    background: transparent;
+    transition: background 0.15s, box-shadow 0.15s;
+  }
+  .pip.filled { background: var(--miss); box-shadow: 0 0 10px var(--miss); }
+
+  /* ---- Lanes ---- */
+  #lanes {
+    position: absolute;
+    inset: 0;
+    display: flex;
+  }
+  .lane {
+    position: relative;
+    flex: 1;
+    border-left: 1px solid rgba(255,255,255,0.04);
+    border-right: 1px solid rgba(255,255,255,0.04);
+    overflow: hidden;
+  }
+  /* faint glowing column to show lane color */
+  .lane::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent, var(--c, #fff));
+    opacity: 0.05;
+    pointer-events: none;
+  }
+  .lane.flash::before { opacity: 0.22; transition: opacity 0.05s; }
+
+  /* ---- Hit zone ---- */
+  #hitzone {
+    position: absolute;
+    left: 0; right: 0;
+    z-index: 10;
+    height: 90px; /* set by JS too, kept in sync */
+    border-top: 2px solid rgba(255,255,255,0.65);
+    border-bottom: 2px solid rgba(255,255,255,0.25);
+    background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.02));
+    pointer-events: none;
+  }
+  #hitline {
+    position: absolute;
+    left: 0; right: 0;
+    z-index: 11;
+    height: 3px;
+    background: #fff;
+    box-shadow: 0 0 16px #fff, 0 0 30px rgba(120,170,255,0.8);
+    pointer-events: none;
+  }
+
+  /* ---- Tiles ---- */
+  .tile {
+    position: absolute;
+    border-radius: 10px;
+    will-change: transform;
+    background: var(--c);
+    box-shadow: 0 0 14px var(--c), 0 0 30px var(--c), inset 0 0 18px rgba(255,255,255,0.35);
+    border: 1px solid rgba(255,255,255,0.5);
+  }
+  .tile.hit { animation: tilePop 0.22s ease-out forwards; }
+  @keyframes tilePop {
+    0% { transform: translateY(var(--y)) scale(1); opacity: 1; }
+    100% { transform: translateY(var(--y)) scale(1.5); opacity: 0; }
+  }
+  .tile.missed { animation: tileFade 0.3s ease-out forwards; }
+  @keyframes tileFade {
+    to { opacity: 0; filter: grayscale(1) brightness(0.5); }
+  }
+
+  /* ---- Lane key labels / activation buttons at bottom ---- */
+  #keys {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 20;
+    display: flex;
+    height: 70px;
+    background: linear-gradient(0deg, rgba(5,6,13,0.95), rgba(5,6,13,0));
+  }
+  .key {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    border-top: 2px solid var(--c);
+    transition: background 0.08s;
+  }
+  .key.active { background: var(--c); }
+  .key.active .key-cap, .key.active .key-muscle { color: #06080f; }
+  .key-cap {
+    font-size: 20px; font-weight: 800; color: var(--c);
+    width: 34px; height: 34px; line-height: 30px; text-align: center;
+    border: 2px solid var(--c); border-radius: 8px;
+  }
+  .key-muscle { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; }
+
+  /* ---- Floating feedback text ---- */
+  .feedback {
+    position: absolute;
+    z-index: 25;
+    font-weight: 900;
+    font-size: 22px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    text-shadow: 0 0 12px currentColor;
+    animation: floatUp 0.7s ease-out forwards;
+    white-space: nowrap;
+  }
+  @keyframes floatUp {
+    0% { opacity: 0; transform: translate(-50%, 0) scale(0.7); }
+    20% { opacity: 1; transform: translate(-50%, -14px) scale(1.1); }
+    100% { opacity: 0; transform: translate(-50%, -54px) scale(1); }
+  }
+
+  /* ============================================================
+     OVERLAYS (menu, countdown, pause, game over, calibration)
+     ============================================================ */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    text-align: center;
+    padding: 28px;
+    background: rgba(5, 6, 14, 0.86);
+    backdrop-filter: blur(6px);
+  }
+  .overlay.hidden { display: none; }
+
+  .title {
+    font-size: 54px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    background: linear-gradient(90deg, var(--lane-leftBicep), var(--lane-rightBicep), var(--lane-rightShoulder));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(0 0 18px rgba(120,120,255,0.4));
+  }
+  .subtitle { color: var(--muted); font-size: 14px; letter-spacing: 1px; max-width: 420px; line-height: 1.5; }
+
+  .btn {
+    pointer-events: auto;
+    cursor: pointer;
+    border: none;
+    color: #06080f;
+    font-weight: 800;
+    font-size: 16px;
+    letter-spacing: 1px;
+    padding: 13px 30px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, var(--lane-leftBicep), #7fd0ff);
+    box-shadow: 0 0 24px rgba(0, 200, 255, 0.45);
+    transition: transform 0.08s, box-shadow 0.15s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 0 34px rgba(0,200,255,0.7); }
+  .btn:active { transform: translateY(0); }
+  .btn.secondary {
+    background: linear-gradient(90deg, #2a3155, #404a7a);
+    color: var(--text);
+    box-shadow: none;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+
+  /* difficulty pills */
+  .pills { display: flex; gap: 10px; }
+  .pill {
+    pointer-events: auto;
+    cursor: pointer;
+    padding: 9px 20px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: transparent;
+    color: var(--muted);
+    font-weight: 700;
+    letter-spacing: 1px;
+    transition: all 0.12s;
+  }
+  .pill.selected {
+    color: #06080f;
+    background: var(--perfect);
+    border-color: var(--perfect);
+    box-shadow: 0 0 18px rgba(0,255,160,0.5);
+  }
+
+  /* Stats grid (game over) */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px 28px;
+    background: var(--panel);
+    padding: 22px 30px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .stat { display: flex; flex-direction: column; gap: 2px; min-width: 120px; }
+  .stat .k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .stat .v { font-size: 28px; font-weight: 800; }
+
+  /* Countdown */
+  #countdown {
+    font-size: 120px;
+    font-weight: 900;
+    background: rgba(5,6,14,0.4);
+  }
+  #countText {
+    animation: countPulse 0.9s ease-out;
+    text-shadow: 0 0 40px rgba(120,170,255,0.8);
+  }
+  @keyframes countPulse {
+    0% { transform: scale(2.2); opacity: 0; }
+    40% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.9); opacity: 0.7; }
+  }
+
+  /* Calibration */
+  .cal-row {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--panel);
+    padding: 12px 16px; border-radius: 12px;
+    width: 420px; max-width: 90vw;
+  }
+  .cal-name { width: 110px; text-align: left; font-weight: 700; font-size: 13px; }
+  .cal-bar {
+    position: relative; flex: 1; height: 16px; border-radius: 8px;
+    background: rgba(255,255,255,0.08); overflow: hidden;
+  }
+  .cal-fill { position: absolute; left:0; top:0; bottom:0; width: 0%; background: var(--c); transition: width 0.05s; }
+  .cal-thresh { position: absolute; top:-3px; bottom:-3px; width: 2px; background: #fff; }
+  .cal-row input[type=range] { width: 90px; }
+  .cal-val { width: 38px; text-align: right; font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); }
+
+  .hint { font-size: 12px; color: var(--muted); }
+  .emg-dot {
+    width: 12px; height: 12px; border-radius: 50%;
+    display: inline-block; flex-shrink: 0;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .emg-dot.off { background: #555; }
+  .emg-dot.connecting { background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: blink 0.8s infinite; }
+  .emg-dot.on { background: var(--perfect); box-shadow: 0 0 12px var(--perfect); }
+  @keyframes blink { 50% { opacity: 0.3; } }
+  kbd {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 5px; padding: 1px 7px; font-size: 12px; font-weight: 700;
+  }
+
+  /* small top-right pause button during play */
+  #pauseBtn {
+    position: absolute; top: 12px; right: 50%; transform: translateX(50%);
+    z-index: 31; pointer-events: auto;
+    background: rgba(20,24,44,0.7); color: var(--text);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px; padding: 5px 12px; font-weight: 700; cursor: pointer;
+    font-size: 12px; letter-spacing: 1px;
+  }
+  #pauseBtn:hover { background: rgba(40,48,84,0.9); }
+  #pauseBtn.hidden { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+
+    <!-- ===== Falling tiles + lanes ===== -->
+    <div id="lanes"></div>
+    <div id="hitzone"></div>
+    <div id="hitline"></div>
+
+    <!-- ===== HUD ===== -->
+    <div id="hud">
+      <div class="hud-block">
+        <span class="hud-label">Score</span>
+        <span class="hud-value" id="scoreValue">0</span>
+      </div>
+      <div class="hud-block" style="align-items:center">
+        <span class="hud-label">Combo</span>
+        <span class="hud-value" id="comboValue">0</span>
+      </div>
+      <div class="hud-block right">
+        <span class="hud-label">Misses</span>
+        <div id="missPips"></div>
+      </div>
+    </div>
+    <button id="pauseBtn" class="hidden">❚❚ PAUSE</button>
+
+    <!-- ===== Bottom lane keys ===== -->
+    <div id="keys"></div>
+
+    <!-- ===== MENU OVERLAY ===== -->
+    <div class="overlay" id="menu">
+      <div class="title">FLEX TILES</div>
+      <div class="subtitle">
+        A muscle-powered rhythm game. Tiles fall — flex the matching muscle when
+        a tile hits the line. Today: keyboard simulates muscles. Tomorrow: real EMG.
+      </div>
+      <div class="row" style="flex-direction:column; align-items:center; gap:10px;">
+        <span class="hud-label">Difficulty</span>
+        <div class="pills" id="difficultyPills">
+          <button class="pill" data-diff="easy">EASY</button>
+          <button class="pill selected" data-diff="medium">MEDIUM</button>
+          <button class="pill" data-diff="hard">HARD</button>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn" id="startBtn">▶ START</button>
+        <button class="btn secondary" id="calBtn">⚙ CALIBRATE EMG</button>
+      </div>
+      <div class="row" style="align-items:center; gap:10px;">
+        <span id="emgDot" class="emg-dot off"></span>
+        <span class="hint" id="emgStatus">EMG: not connected — using keyboard</span>
+        <button class="btn secondary" id="emgConnectBtn" style="padding:7px 16px; font-size:13px;">Connect EMG</button>
+      </div>
+      <div class="hint">
+        Keys — <kbd>A</kbd> Left Bicep &nbsp; <kbd>K</kbd> Left Shoulder &nbsp;|&nbsp;
+        <kbd>P</kbd> Pause
+      </div>
+    </div>
+
+    <!-- ===== COUNTDOWN OVERLAY ===== -->
+    <div class="overlay hidden" id="countdown">
+      <div id="countText">3</div>
+    </div>
+
+    <!-- ===== PAUSE OVERLAY ===== -->
+    <div class="overlay hidden" id="pause">
+      <div class="title" style="font-size:40px;">PAUSED</div>
+      <div class="row">
+        <button class="btn" id="resumeBtn">▶ RESUME</button>
+        <button class="btn secondary" id="quitBtn">✕ QUIT</button>
+      </div>
+    </div>
+
+    <!-- ===== GAME OVER OVERLAY ===== -->
+    <div class="overlay hidden" id="gameover">
+      <div class="title" id="goTitle" style="font-size:42px;">ROUND OVER</div>
+      <div class="stats">
+        <div class="stat"><span class="k">Final Score</span><span class="v" id="goScore">0</span></div>
+        <div class="stat"><span class="k">Accuracy</span><span class="v" id="goAcc">0%</span></div>
+        <div class="stat"><span class="k">Highest Combo</span><span class="v" id="goCombo">0</span></div>
+        <div class="stat"><span class="k">Tiles Hit</span><span class="v" id="goHit">0</span></div>
+        <div class="stat"><span class="k">Tiles Missed</span><span class="v" id="goMiss">0</span></div>
+        <div class="stat"><span class="k">Best Rank</span><span class="v" id="goRank">—</span></div>
+      </div>
+      <button class="btn" id="restartBtn">⟳ PLAY AGAIN</button>
+    </div>
+
+    <!-- ===== CALIBRATION OVERLAY ===== -->
+    <div class="overlay hidden" id="calibration">
+      <div class="title" style="font-size:34px;">EMG CALIBRATION</div>
+      <div class="subtitle">
+        Set the activation threshold for each muscle. A muscle counts as "flexed"
+        when its EMG signal rises above its threshold. (Bars below are a live demo —
+        hold the lane keys to drive them.)
+      </div>
+      <div id="calRows"></div>
+      <button class="btn" id="calBackBtn">◀ BACK</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   FLEX TILES — single-file rhythm game
+   ----------------------------------------------------------------------------
+   SECTIONS:
+     1.  Lane / muscle configuration
+     2.  Input abstraction  (keyboard now, EMG later)  <-- key architecture
+     3.  Difficulty + tunables (tile speed, hit window)
+     4.  Song / beatmap (timed note spawns)
+     5.  Game state
+     6.  Tile spawning
+     7.  Game loop (tile movement via requestAnimationFrame)
+     8.  Hit detection + scoring
+     9.  Miss detection
+     10. Game-over logic
+     11. UI: countdown, pause, calibration, menu wiring
+   ============================================================================ */
+
+
+/* ============================================================================
+   1. LANE / MUSCLE CONFIGURATION
+   Each lane maps a muscle id -> a test key + a neon color.
+   The order here defines left-to-right lane order on screen.
+   ============================================================================ */
+const LANES = [
+  { id: "leftBicep",     name: "Left Bicep",     key: "a", color: "var(--lane-leftBicep)" },
+  { id: "leftShoulder",  name: "Left Shoulder",  key: "k", color: "var(--lane-leftShoulder)" },
+];
+const LANE_INDEX = {};        // id -> index
+LANES.forEach((l, i) => (LANE_INDEX[l.id] = i));
+
+
+/* ============================================================================
+   2. INPUT ABSTRACTION  (THE EMG-READY LAYER)
+   ----------------------------------------------------------------------------
+   The whole game only ever reads `inputState`. Nothing in the gameplay code
+   knows or cares whether a flex came from a keyboard or from an EMG sensor.
+
+   - Keyboard events flip booleans in inputState directly (simulation).
+   - updateInputsFromEMG(emgData) does the same thing from analog EMG values,
+     using a per-muscle threshold. Wire your sensor's data into that function
+     and the rest of the game works unchanged.
+   ============================================================================ */
+const inputState = {
+  leftBicep: false,
+  leftShoulder: false,
+};
+
+// Latest raw EMG magnitudes (0..1). Used by the calibration screen + thresholds.
+const emgLevels = {
+  leftBicep: 0, leftShoulder: 0,
+};
+
+// Per-muscle activation thresholds (configurable on the calibration screen).
+const emgThresholds = {
+  leftBicep: 0.6, leftShoulder: 0.6,
+};
+
+// --- Noise-robustness tuning for live EMG ---
+// EMG_SMOOTHING: 0..1 exponential moving-average factor. Lower = smoother but
+//   laggier. This kills the brief noise spikes that cause random firing.
+// EMG_REFRACTORY_MS: after a muscle fires, it can't fire again for this long,
+//   so a flickering signal can't machine-gun out dozens of hits.
+const EMG_SMOOTHING = 0.35;
+const EMG_REFRACTORY_MS = 140;
+const emgSmooth = { leftBicep: 0, leftShoulder: 0 };   // EMA state per muscle
+const emgLastFire = { leftBicep: 0, leftShoulder: 0 }; // last flex timestamp
+
+/**
+ * EMG INPUT HOOK (placeholder — no hardware connected).
+ * Call this on every EMG frame with normalized muscle magnitudes, e.g.:
+ *   updateInputsFromEMG({ leftBicep: 0.72, rightBicep: 0.15, leftShoulder: 0.83, rightShoulder: 0.20 })
+ * A muscle is considered "flexed" when its value exceeds its threshold.
+ *
+ * To go live later: read your sensor, normalize to 0..1, and call this each frame.
+ * Optionally call markFlex(id) here too if you want the same hit feedback as keys.
+ */
+function updateInputsFromEMG(emgData) {
+  const now = performance.now();
+  for (const id in inputState) {
+    if (emgData[id] === undefined) continue;
+
+    // 1) SMOOTH: exponential moving average tames spiky/noisy EMG so a single
+    //    stray sample can't trip the threshold.
+    emgSmooth[id] += EMG_SMOOTHING * (emgData[id] - emgSmooth[id]);
+    const v = emgSmooth[id];
+    emgLevels[id] = v;                 // calibration bars show the smoothed value
+
+    // 2) HYSTERESIS: cross ABOVE threshold to flex; must fall BELOW threshold*0.7
+    //    to re-arm. Stops a signal hovering at the line from chattering.
+    const th = emgThresholds[id];
+    let flexed = inputState[id];
+    if (!inputState[id] && v >= th) flexed = true;
+    else if (inputState[id] && v < th * 0.7) flexed = false;
+
+    // 3) REFRACTORY: on a rising edge, only count it as a real flex if enough
+    //    time has passed since the last one. Blocks machine-gun mis-fires.
+    if (flexed && !inputState[id]) {
+      if (now - emgLastFire[id] >= EMG_REFRACTORY_MS) {
+        emgLastFire[id] = now;
+        onFlexStart(id);
+      }
+    }
+    inputState[id] = flexed;
+  }
+}
+
+// Called on the rising edge of any flex (key OR emg). Drives hit attempts.
+function onFlexStart(id) {
+  flashLane(id);
+  if (game.running && !game.paused) attemptHit(id);
+}
+
+/* ---- Keyboard simulation of muscle flexes ---- */
+const keyToLane = {};
+LANES.forEach((l) => (keyToLane[l.key] = l.id));
+
+window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+
+  // global controls
+  if (k === "p") { togglePause(); return; }
+  if (k === "enter" && !game.running && !overlays.menu.classList.contains("hidden")) {
+    startCountdown(); return;
+  }
+
+  const laneId = keyToLane[k];
+  if (laneId === undefined) return;
+  e.preventDefault();
+  if (e.repeat) return;                 // ignore key auto-repeat
+  if (inputState[laneId]) return;       // already held
+  inputState[laneId] = true;
+  emgLevels[laneId] = 1;                // simulate full-strength signal
+  setKeyVisual(laneId, true);
+  onFlexStart(laneId);
+});
+
+window.addEventListener("keyup", (e) => {
+  const laneId = keyToLane[e.key.toLowerCase()];
+  if (laneId === undefined) return;
+  inputState[laneId] = false;
+  emgLevels[laneId] = 0;
+  setKeyVisual(laneId, false);
+});
+
+
+/* ============================================================================
+   3. DIFFICULTY + TUNABLES
+   ----------------------------------------------------------------------------
+   travelMs : how long a tile takes to fall from top to the hit line.
+              (smaller = faster tiles)
+   hitWindowMs : +/- timing tolerance around the perfect moment.
+   Scoring tiers are fractions of the hit window.
+   ============================================================================ */
+const DIFFICULTY = {
+  easy:   { travelMs: 3640, hitWindowMs: 336, label: "EASY" },
+  medium: { travelMs: 2000, hitWindowMs: 170, label: "MEDIUM" },
+  hard:   { travelMs: 1400, hitWindowMs: 120, label: "HARD" },
+};
+let selectedDifficulty = "medium";
+
+// Live tunables, set from difficulty when a round starts.
+const tune = {
+  travelMs: 2000,
+  hitWindowMs: 170,
+  perfectFrac: 0.35,  // |delta| < window*frac  => Perfect
+  goodFrac: 0.70,     // |delta| < window*frac  => Good
+                      // otherwise within window => Early/Late
+};
+
+const MAX_MISSES = 5;
+const POINTS = { perfect: 100, good: 50, edge: 25, miss: 0 };
+
+
+/* ============================================================================
+   4. SONG / BEATMAP
+   ----------------------------------------------------------------------------
+   Each note = { time (ms from song start, when it should be HIT), lane }.
+   `time` is the moment the tile should reach the hit line, so we spawn it
+   `travelMs` earlier. This keeps the chart independent of tile speed.
+   ============================================================================ */
+function buildDemoSong() {
+  const notes = [];
+  const B = "leftBicep", S = "leftShoulder";
+  let t = 1600;
+
+  // Intro — one lane at a time to learn the muscles (slower for EMG reaction)
+  for (const lane of [B, S, B, S]) { notes.push({ time: t, lane }); t += 750; }
+
+  // Section A — steady alternation
+  const patternA = [B, S, B, S, B, B, S, S];
+  for (let r = 0; r < 3; r++) for (const lane of patternA) { notes.push({ time: t, lane }); t += 520; }
+
+  // Section B — call & response
+  const patternB = [B, B, S, B, S, S, B, S];
+  for (let r = 0; r < 2; r++) for (const lane of patternB) { notes.push({ time: t, lane }); t += 460; }
+
+  // Finale — quicker bursts
+  const burst = [B, S, B, S, B, B, S, S, B, S];
+  for (const lane of burst) { notes.push({ time: t, lane }); t += 400; }
+
+  return notes.sort((a, b) => a.time - b.time);
+}
+
+
+/* ============================================================================
+   5. GAME STATE
+   ============================================================================ */
+const stage = document.getElementById("stage");
+const lanesEl = document.getElementById("lanes");
+const keysEl = document.getElementById("keys");
+const hitzoneEl = document.getElementById("hitzone");
+const hitlineEl = document.getElementById("hitline");
+
+const overlays = {
+  menu: document.getElementById("menu"),
+  countdown: document.getElementById("countdown"),
+  pause: document.getElementById("pause"),
+  gameover: document.getElementById("gameover"),
+  calibration: document.getElementById("calibration"),
+};
+
+const game = {
+  running: false,
+  paused: false,
+  rafId: null,
+
+  startTime: 0,        // performance.now() at song start
+  elapsed: 0,          // ms into song (pause-adjusted)
+  pausedAt: 0,
+
+  notes: [],           // beatmap
+  nextNoteIdx: 0,      // next note to spawn
+  tiles: [],           // active tile objects
+
+  // live stats
+  score: 0,
+  combo: 0,
+  maxCombo: 0,
+  misses: 0,
+  hits: 0,
+  missedTiles: 0,
+  judged: 0,           // total tiles resolved (hit or missed) -> accuracy weighting
+  accSum: 0,           // sum of accuracy weights for averaged accuracy
+};
+
+// Geometry (computed from stage size each round)
+const geo = {
+  laneW: 0,
+  hitY: 0,             // y of the hit line center
+  hitH: 90,            // hit zone height
+  tileH: 92,
+  topPad: 70,          // HUD height — tiles start above this offscreen
+};
+
+
+/* ============================================================================
+   BUILD STATIC DOM (lanes + bottom keys + miss pips + calibration rows)
+   ============================================================================ */
+function buildLanes() {
+  lanesEl.innerHTML = "";
+  keysEl.innerHTML = "";
+  LANES.forEach((lane) => {
+    const laneDiv = document.createElement("div");
+    laneDiv.className = "lane";
+    laneDiv.style.setProperty("--c", lane.color);
+    laneDiv.dataset.id = lane.id;
+    lanesEl.appendChild(laneDiv);
+
+    const key = document.createElement("div");
+    key.className = "key";
+    key.style.setProperty("--c", lane.color);
+    key.dataset.id = lane.id;
+    key.innerHTML = `<div class="key-cap">${lane.key.toUpperCase()}</div>
+                     <div class="key-muscle">${lane.name}</div>`;
+    // pointer/touch support: tap the key pad to flex
+    key.addEventListener("pointerdown", (e) => { e.preventDefault(); pressLane(lane.id); });
+    key.addEventListener("pointerup", () => releaseLane(lane.id));
+    key.addEventListener("pointerleave", () => releaseLane(lane.id));
+    keysEl.appendChild(key);
+  });
+}
+
+function buildMissPips() {
+  const wrap = document.getElementById("missPips");
+  wrap.innerHTML = "";
+  for (let i = 0; i < MAX_MISSES; i++) {
+    const pip = document.createElement("div");
+    pip.className = "pip";
+    wrap.appendChild(pip);
+  }
+}
+
+function buildCalibration() {
+  const wrap = document.getElementById("calRows");
+  wrap.innerHTML = "";
+  LANES.forEach((lane) => {
+    const row = document.createElement("div");
+    row.className = "cal-row";
+    row.style.setProperty("--c", lane.color);
+    row.innerHTML = `
+      <div class="cal-name">${lane.name}</div>
+      <div class="cal-bar">
+        <div class="cal-fill" data-fill="${lane.id}"></div>
+        <div class="cal-thresh" data-thresh="${lane.id}"></div>
+      </div>
+      <input type="range" min="0" max="1" step="0.01" value="${emgThresholds[lane.id]}" data-range="${lane.id}">
+      <div class="cal-val" data-val="${lane.id}">${emgThresholds[lane.id].toFixed(2)}</div>
+    `;
+    wrap.appendChild(row);
+    const range = row.querySelector("input");
+    range.addEventListener("input", () => {
+      emgThresholds[lane.id] = parseFloat(range.value);
+      row.querySelector(`[data-val="${lane.id}"]`).textContent = emgThresholds[lane.id].toFixed(2);
+      row.querySelector(`[data-thresh="${lane.id}"]`).style.left = (emgThresholds[lane.id] * 100) + "%";
+    });
+    row.querySelector(`[data-thresh="${lane.id}"]`).style.left = (emgThresholds[lane.id] * 100) + "%";
+  });
+}
+
+
+/* ============================================================================
+   GEOMETRY — recompute pixel positions from current stage size
+   ============================================================================ */
+function computeGeometry() {
+  const rect = stage.getBoundingClientRect();
+  geo.laneW = rect.width / LANES.length;
+  geo.hitH = 90;
+  // hit line sits ~120px above the bottom key strip
+  geo.hitY = rect.height - 70 /*keys*/ - 70; // center of hit zone
+  geo.tileH = Math.min(96, geo.laneW * 0.7);
+
+  // place hit zone + line in the DOM
+  hitzoneEl.style.height = geo.hitH + "px";
+  hitzoneEl.style.top = (geo.hitY - geo.hitH / 2) + "px";
+  hitlineEl.style.top = geo.hitY + "px";
+}
+window.addEventListener("resize", () => { if (stage) computeGeometry(); });
+
+
+/* ============================================================================
+   6. TILE SPAWNING
+   ----------------------------------------------------------------------------
+   We walk the beatmap in time order. A note with hit-time T is spawned at
+   T - travelMs so that, moving at constant speed, it arrives at the hit line
+   exactly at T. Each tile remembers its target hit time for judging.
+   ============================================================================ */
+function spawnDueTiles() {
+  while (game.nextNoteIdx < game.notes.length) {
+    const note = game.notes[game.nextNoteIdx];
+    const spawnAt = note.time - tune.travelMs;
+    if (game.elapsed < spawnAt) break;   // not time yet (notes are sorted)
+    createTile(note);
+    game.nextNoteIdx++;
+  }
+}
+
+function createTile(note) {
+  const laneIdx = LANE_INDEX[note.lane];
+  const lane = LANES[laneIdx];
+
+  const el = document.createElement("div");
+  el.className = "tile";
+  el.style.setProperty("--c", lane.color);
+  el.style.width = (geo.laneW - 16) + "px";
+  el.style.height = geo.tileH + "px";
+  el.style.left = (laneIdx * geo.laneW + 8) + "px";
+  lanesEl.appendChild(el);
+
+  game.tiles.push({
+    el,
+    lane: note.lane,
+    laneIdx,
+    hitTime: note.time,   // when it should be struck
+    resolved: false,      // hit or missed already?
+  });
+}
+
+
+/* ============================================================================
+   7. GAME LOOP — tile movement via requestAnimationFrame
+   ----------------------------------------------------------------------------
+   Position is a pure function of time: progress = (elapsed - spawnTime)/travel.
+   y = progress * hitY  (so progress==1 places the tile center on the hit line).
+   This makes movement frame-rate independent and keeps tiles synced to audio time.
+   ============================================================================ */
+function loop(now) {
+  if (!game.running) return;
+  if (!game.paused) {
+    game.elapsed = now - game.startTime;
+
+    spawnDueTiles();      // (6) spawn
+    moveTiles();          // (7) move + (9) miss detection
+    updateHUD();
+
+    // End when the chart is exhausted and no tiles remain on screen
+    if (game.nextNoteIdx >= game.notes.length && game.tiles.length === 0) {
+      endGame(true);
+      return;
+    }
+  }
+  game.rafId = requestAnimationFrame(loop);
+}
+
+function moveTiles() {
+  for (let i = game.tiles.length - 1; i >= 0; i--) {
+    const t = game.tiles[i];
+    const spawnTime = t.hitTime - tune.travelMs;
+    const progress = (game.elapsed - spawnTime) / tune.travelMs;
+    const y = progress * geo.hitY;                 // center-y in px
+    t.el.style.setProperty("--y", (y - geo.tileH / 2) + "px");
+    t.el.style.transform = `translateY(${y - geo.tileH / 2}px)`;
+
+    // (9) MISS DETECTION — tile fell past the hit window without being struck
+    if (!t.resolved && game.elapsed > t.hitTime + tune.hitWindowMs) {
+      registerMiss(t);
+    }
+
+    // cull tiles that are well past the bottom or finished animating
+    if (t.resolved && (progress > 1.4)) {
+      removeTile(i);
+    } else if (progress > 1.8) {
+      removeTile(i);
+    }
+  }
+}
+
+function removeTile(i) {
+  const t = game.tiles[i];
+  if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el);
+  game.tiles.splice(i, 1);
+}
+
+
+/* ============================================================================
+   8. HIT DETECTION + SCORING
+   ----------------------------------------------------------------------------
+   On a flex (key/EMG rising edge) for lane L, find the nearest un-resolved tile
+   in lane L within the hit window. Judge by |delta| to its hit time.
+   ============================================================================ */
+function attemptHit(laneId) {
+  const nowT = game.elapsed;
+  let best = null, bestDelta = Infinity, bestIndex = -1;
+
+  for (let i = 0; i < game.tiles.length; i++) {
+    const t = game.tiles[i];
+    if (t.resolved || t.lane !== laneId) continue;
+    const delta = nowT - t.hitTime;             // + = late, - = early
+    if (Math.abs(delta) <= tune.hitWindowMs && Math.abs(delta) < Math.abs(bestDelta)) {
+      best = t; bestDelta = delta; bestIndex = i;
+    }
+  }
+
+  if (!best) {
+    // pressed with no tile in range = wrong/too-early/too-late. No score, breaks combo lightly.
+    // (We don't add a miss here — only un-hit tiles passing the line count as misses.)
+    return;
+  }
+
+  // ---- Judge timing ----
+  const absD = Math.abs(bestDelta);
+  let grade, pts;
+  if (absD <= tune.hitWindowMs * tune.perfectFrac) { grade = "Perfect"; pts = POINTS.perfect; }
+  else if (absD <= tune.hitWindowMs * tune.goodFrac) { grade = "Good"; pts = POINTS.good; }
+  else { grade = bestDelta < 0 ? "Early" : "Late"; pts = POINTS.edge; }
+
+  // ---- Apply scoring ----
+  best.resolved = true;
+  best.el.classList.add("hit");
+  game.hits++;
+  game.combo++;
+  game.maxCombo = Math.max(game.maxCombo, game.combo);
+  // combo bonus: +5 per chained hit, capped
+  const comboBonus = Math.min(game.combo, 20) * 5;
+  game.score += pts + comboBonus;
+
+  // accuracy weighting: Perfect=1, Good=0.66, edge=0.33
+  game.judged++;
+  game.accSum += grade === "Perfect" ? 1 : grade === "Good" ? 0.66 : 0.33;
+
+  spawnFeedback(best.laneIdx, grade, gradeColor(grade));
+  pulseLane(best.laneIdx);
+}
+
+function gradeColor(g) {
+  return g === "Perfect" ? "var(--perfect)"
+       : g === "Good" ? "var(--good)"
+       : g === "Miss" ? "var(--miss)"
+       : "var(--ok)";
+}
+
+
+/* ============================================================================
+   9. MISS DETECTION (registration)
+   ============================================================================ */
+function registerMiss(t) {
+  t.resolved = true;
+  t.el.classList.add("missed");
+  game.misses++;
+  game.missedTiles++;
+  game.combo = 0;
+  game.judged++;     // counts toward accuracy denominator, adds 0 to accSum
+
+  spawnFeedback(t.laneIdx, "Miss", "var(--miss)");
+  updateMissPips();
+
+  // (10) lose condition
+  if (game.misses >= MAX_MISSES) endGame(false);
+}
+
+
+/* ============================================================================
+   FEEDBACK + VISUALS
+   ============================================================================ */
+function spawnFeedback(laneIdx, text, color) {
+  const fb = document.createElement("div");
+  fb.className = "feedback";
+  fb.textContent = text;
+  fb.style.color = color;
+  fb.style.left = (laneIdx * geo.laneW + geo.laneW / 2) + "px";
+  fb.style.top = (geo.hitY - 30) + "px";
+  stage.appendChild(fb);
+  setTimeout(() => fb.remove(), 720);
+}
+
+function flashLane(laneId) {
+  const laneDiv = lanesEl.querySelector(`.lane[data-id="${laneId}"]`);
+  if (!laneDiv) return;
+  laneDiv.classList.add("flash");
+  setTimeout(() => laneDiv.classList.remove("flash"), 90);
+}
+function pulseLane(laneIdx) {
+  flashLane(LANES[laneIdx].id);
+}
+
+function setKeyVisual(laneId, on) {
+  const key = keysEl.querySelector(`.key[data-id="${laneId}"]`);
+  if (key) key.classList.toggle("active", on);
+}
+
+// pointer/touch helpers reuse the same input path as keys
+function pressLane(laneId) {
+  if (inputState[laneId]) return;
+  inputState[laneId] = true;
+  emgLevels[laneId] = 1;
+  setKeyVisual(laneId, true);
+  onFlexStart(laneId);
+}
+function releaseLane(laneId) {
+  inputState[laneId] = false;
+  emgLevels[laneId] = 0;
+  setKeyVisual(laneId, false);
+}
+
+
+/* ============================================================================
+   HUD
+   ============================================================================ */
+function updateHUD() {
+  document.getElementById("scoreValue").textContent = game.score;
+  document.getElementById("comboValue").textContent = game.combo;
+}
+function updateMissPips() {
+  const pips = document.querySelectorAll("#missPips .pip");
+  pips.forEach((p, i) => p.classList.toggle("filled", i < game.misses));
+}
+
+function currentAccuracy() {
+  if (game.judged === 0) return 0;
+  return Math.round((game.accSum / game.judged) * 100);
+}
+function rankFor(acc) {
+  if (acc >= 95) return "S";
+  if (acc >= 85) return "A";
+  if (acc >= 70) return "B";
+  if (acc >= 50) return "C";
+  return "D";
+}
+
+
+/* ============================================================================
+   ROUND CONTROL: start / countdown / pause / end
+   ============================================================================ */
+function resetGameState() {
+  // clear tiles
+  game.tiles.forEach((t) => t.el.remove());
+  game.tiles = [];
+  Object.assign(game, {
+    running: false, paused: false,
+    startTime: 0, elapsed: 0, pausedAt: 0,
+    notes: buildDemoSong(), nextNoteIdx: 0,
+    score: 0, combo: 0, maxCombo: 0,
+    misses: 0, hits: 0, missedTiles: 0,
+    judged: 0, accSum: 0,
+  });
+  updateHUD();
+  updateMissPips();
+}
+
+function applyDifficulty() {
+  const d = DIFFICULTY[selectedDifficulty];
+  tune.travelMs = d.travelMs;
+  tune.hitWindowMs = d.hitWindowMs;
+}
+
+function showOverlay(name) {
+  for (const k in overlays) overlays[k].classList.toggle("hidden", k !== name);
+}
+function hideAllOverlays() {
+  for (const k in overlays) overlays[k].classList.add("hidden");
+}
+
+function startCountdown() {
+  applyDifficulty();
+  computeGeometry();
+  resetGameState();
+  hideAllOverlays();
+  showOverlay("countdown");
+  document.getElementById("pauseBtn").classList.add("hidden");
+
+  const steps = ["3", "2", "1", "FLEX!"];
+  let i = 0;
+  const ct = document.getElementById("countText");
+  const tick = () => {
+    ct.textContent = steps[i];
+    // restart the CSS pulse animation
+    ct.style.animation = "none"; void ct.offsetWidth; ct.style.animation = "";
+    i++;
+    if (i < steps.length) {
+      setTimeout(tick, i === steps.length - 1 ? 600 : 800);
+    } else {
+      setTimeout(beginRound, 500);
+    }
+  };
+  tick();
+}
+
+function beginRound() {
+  hideAllOverlays();
+  document.getElementById("pauseBtn").classList.remove("hidden");
+  game.running = true;
+  game.paused = false;
+  game.startTime = performance.now();
+  game.elapsed = 0;
+  game.rafId = requestAnimationFrame(loop);
+}
+
+function togglePause() {
+  if (!game.running) return;
+  game.paused ? resumeGame() : pauseGame();
+}
+function pauseGame() {
+  if (!game.running || game.paused) return;
+  game.paused = true;
+  game.pausedAt = performance.now();
+  showOverlay("pause");
+}
+function resumeGame() {
+  if (!game.running || !game.paused) return;
+  // shift startTime forward by the paused duration so elapsed stays continuous
+  const pausedDuration = performance.now() - game.pausedAt;
+  game.startTime += pausedDuration;
+  game.paused = false;
+  hideAllOverlays();
+  document.getElementById("pauseBtn").classList.remove("hidden");
+}
+
+function quitToMenu() {
+  game.running = false;
+  game.paused = false;
+  cancelAnimationFrame(game.rafId);
+  game.tiles.forEach((t) => t.el.remove());
+  game.tiles = [];
+  document.getElementById("pauseBtn").classList.add("hidden");
+  showOverlay("menu");
+}
+
+/* ---- (10) GAME-OVER LOGIC ---- */
+function endGame(completed) {
+  game.running = false;
+  cancelAnimationFrame(game.rafId);
+  game.tiles.forEach((t) => t.el.remove());
+  game.tiles = [];
+  document.getElementById("pauseBtn").classList.add("hidden");
+
+  const acc = currentAccuracy();
+  document.getElementById("goTitle").textContent = completed ? "SONG CLEARED!" : "ROUND OVER";
+  document.getElementById("goScore").textContent = game.score;
+  document.getElementById("goAcc").textContent = acc + "%";
+  document.getElementById("goCombo").textContent = game.maxCombo;
+  document.getElementById("goHit").textContent = game.hits;
+  document.getElementById("goMiss").textContent = game.missedTiles;
+  document.getElementById("goRank").textContent = rankFor(acc);
+
+  showOverlay("gameover");
+}
+
+
+/* ============================================================================
+   11. MENU / BUTTON WIRING
+   ============================================================================ */
+document.getElementById("startBtn").addEventListener("click", startCountdown);
+document.getElementById("restartBtn").addEventListener("click", startCountdown);
+document.getElementById("resumeBtn").addEventListener("click", resumeGame);
+document.getElementById("quitBtn").addEventListener("click", quitToMenu);
+document.getElementById("pauseBtn").addEventListener("click", togglePause);
+
+// difficulty pills
+document.querySelectorAll("#difficultyPills .pill").forEach((pill) => {
+  pill.addEventListener("click", () => {
+    selectedDifficulty = pill.dataset.diff;
+    document.querySelectorAll("#difficultyPills .pill")
+      .forEach((p) => p.classList.toggle("selected", p === pill));
+  });
+});
+
+// calibration open/close
+document.getElementById("calBtn").addEventListener("click", () => showOverlay("calibration"));
+document.getElementById("calBackBtn").addEventListener("click", () => showOverlay("menu"));
+
+
+/* ============================================================================
+   CALIBRATION LIVE BARS
+   ----------------------------------------------------------------------------
+   While the calibration screen is open, animate each muscle's live level bar.
+   This demonstrates the threshold visually. With real EMG, emgLevels[] would be
+   fed by updateInputsFromEMG(); here keys drive a value toward 0/1 smoothly.
+   ============================================================================ */
+function calibrationTick() {
+  if (!overlays.calibration.classList.contains("hidden")) {
+    LANES.forEach((lane) => {
+      // smooth the displayed level toward the raw input for a natural EMG feel
+      const target = emgLevels[lane.id];
+      const fill = document.querySelector(`[data-fill="${lane.id}"]`);
+      if (fill) fill.style.width = (target * 100) + "%";
+    });
+  }
+  requestAnimationFrame(calibrationTick);
+}
+
+
+/* ============================================================================
+   DEMO EMG FEED (optional, off by default)
+   ----------------------------------------------------------------------------
+   Uncomment startFakeEmgDemo() to see updateInputsFromEMG() driving the game
+   with synthetic signals — proof the EMG path works without any keyboard input.
+   ============================================================================ */
+function startFakeEmgDemo() {
+  setInterval(() => {
+    updateInputsFromEMG({
+      leftBicep: Math.random(),
+      rightBicep: Math.random(),
+      leftShoulder: Math.random(),
+      rightShoulder: Math.random(),
+    });
+  }, 100);
+}
+// startFakeEmgDemo();  // <- enable to test EMG pathway
+
+
+/* ============================================================================
+   LIVE EMG CONNECTION  (browser <- Python bridge)
+   ----------------------------------------------------------------------------
+   The browser cannot read the Cerelog board directly (no serial access). Run
+   `emg_bridge.py`, which reads the board with BrainFlow and streams normalized
+   muscle activation over Server-Sent Events. We subscribe here and pipe every
+   frame straight into updateInputsFromEMG() — the same path EMG hardware uses.
+   ============================================================================ */
+const EMG_URL = "http://localhost:8765/emg";  // emg_bridge.py default
+let emgSource = null;
+let emgLastMsg = 0;
+
+function setEmgStatus(state, text) {
+  const dot = document.getElementById("emgDot");
+  const label = document.getElementById("emgStatus");
+  dot.className = "emg-dot " + state;            // off | connecting | on
+  if (text) label.textContent = text;
+}
+
+function connectEMG() {
+  if (emgSource) emgSource.close();
+  setEmgStatus("connecting", "EMG: connecting to bridge…");
+  try {
+    emgSource = new EventSource(EMG_URL);
+  } catch (err) {
+    setEmgStatus("off", "EMG: failed to open connection");
+    return;
+  }
+
+  emgSource.onmessage = (e) => {
+    emgLastMsg = performance.now();
+    try {
+      const data = JSON.parse(e.data);
+      // data looks like { leftBicep: 0.71, leftShoulder: 0.12 }
+      updateInputsFromEMG(data);
+      setEmgStatus("on", "EMG: live ✓ (flex your muscles!)");
+    } catch (_) { /* ignore malformed frame */ }
+  };
+
+  emgSource.onerror = () => {
+    setEmgStatus("off", "EMG: bridge not running — run emg_bridge.py (keyboard still works)");
+    // EventSource auto-reconnects; we just reflect the dropped state.
+  };
+}
+
+document.getElementById("emgConnectBtn").addEventListener("click", connectEMG);
+
+
+/* ============================================================================
+   INIT
+   ============================================================================ */
+function init() {
+  buildLanes();
+  buildMissPips();
+  buildCalibration();
+  computeGeometry();
+  showOverlay("menu");
+  requestAnimationFrame(calibrationTick);
+  connectEMG();   // try to reach the EMG bridge automatically (harmless if not running)
+}
+init();
+</script>
+</body>
+</html>
