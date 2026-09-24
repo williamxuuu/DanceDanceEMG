@@ -140,6 +140,7 @@ def main():
             levels, railed = record_window(board, sampling_rate, channels, FLEX_SECONDS)
             if railed:
                 print("  (channels railed -> check SRB1 reference electrode)\n")
+                rounds -= 1  # discarded round shouldn't count against the score
                 continue
 
             ratios = {m: levels[m] / baseline[m] for m in muscles}
