@@ -129,6 +129,7 @@ def main():
     print("\n=== GAME START ===  (Ctrl+C to quit)\n")
     rounds = 0
     correct = 0
+    completed = 0   # rounds actually scored (excludes one interrupted by Ctrl+C)
     try:
         while True:
             rounds += 1
@@ -153,14 +154,15 @@ def main():
                 detected = best
                 hit = (best == target)
 
+            completed += 1
             if hit:
                 correct += 1
             mark = "CORRECT" if hit else "nope"
             detail = "  ".join(f"{m} {ratios[m]:.1f}x" for m in muscles)
             print(f"  -> detected: {detected:20s} [{mark}]   ({detail})")
-            print(f"  score: {correct}/{rounds}\n")
+            print(f"  score: {correct}/{completed}\n")
     except KeyboardInterrupt:
-        print(f"\nFinal score: {correct}/{rounds}")
+        print(f"\nFinal score: {correct}/{completed}")
     finally:
         board.stop_stream()
         board.release_session()
