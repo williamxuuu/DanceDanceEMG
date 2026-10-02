@@ -273,6 +273,9 @@ def main():
     finally:
         running = False
         server.shutdown()
+        # The reader is a daemon thread, so it would be killed mid-loop on exit.
+        # Give it a moment to stop the stream and release the board cleanly.
+        t.join(timeout=3)
 
 
 if __name__ == "__main__":
