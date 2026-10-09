@@ -147,7 +147,7 @@ def reader_thread():
     window_samples = max(8, int(WINDOW_SECONDS * sampling_rate))
 
     # --- Calibrate: relax both muscles ---
-    print("\n=== Calibrating: RELAX both muscles for 3 seconds ===")
+    print(f"\n=== Calibrating: RELAX both muscles for {BASELINE_SECONDS:g} seconds ===")
     board.get_board_data()           # flush
     time.sleep(BASELINE_SECONDS)
     base_data = board.get_board_data()
