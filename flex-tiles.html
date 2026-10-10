@@ -845,6 +845,10 @@ function loop(now) {
     moveTiles();          // (7) move + (9) miss detection
     updateHUD();
 
+    // The miss limit can end the round inside moveTiles(); don't fall through
+    // and re-report it as a cleared song.
+    if (!game.running) return;
+
     // End when the chart is exhausted and no tiles remain on screen
     if (game.nextNoteIdx >= game.notes.length && game.tiles.length === 0) {
       endGame(true);
@@ -866,6 +870,7 @@ function moveTiles() {
     // (9) MISS DETECTION — tile fell past the hit window without being struck
     if (!t.resolved && game.elapsed > t.hitTime + tune.hitWindowMs) {
       registerMiss(t);
+      if (!game.running) return;   // game over emptied game.tiles — stop iterating
     }
 
     // cull tiles that are well past the bottom or finished animating
