@@ -257,8 +257,10 @@ class EMGHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
                 self.wfile.flush()
                 time.sleep(period)
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # browser closed the tab / navigated away
+        except ConnectionError:
+            # browser closed the tab / navigated away. Covers BrokenPipeError and
+            # ConnectionResetError, plus ConnectionAbortedError (what Windows raises).
+            pass
 
 
 def main():
