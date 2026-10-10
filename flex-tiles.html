@@ -517,13 +517,15 @@ const emgSmooth = { leftBicep: 0, leftShoulder: 0 };   // EMA state per muscle
 const emgLastFire = { leftBicep: 0, leftShoulder: 0 }; // last flex timestamp
 
 /**
- * EMG INPUT HOOK (placeholder — no hardware connected).
- * Call this on every EMG frame with normalized muscle magnitudes, e.g.:
- *   updateInputsFromEMG({ leftBicep: 0.72, rightBicep: 0.15, leftShoulder: 0.83, rightShoulder: 0.20 })
- * A muscle is considered "flexed" when its value exceeds its threshold.
+ * EMG INPUT HOOK.
+ * Called on every EMG frame with normalized (0..1) muscle magnitudes, e.g.:
+ *   updateInputsFromEMG({ leftBicep: 0.72, leftShoulder: 0.83 })
+ * A muscle is considered "flexed" when its smoothed value exceeds its threshold.
+ * Ids that aren't lanes in inputState are ignored.
  *
- * To go live later: read your sensor, normalize to 0..1, and call this each frame.
- * Optionally call markFlex(id) here too if you want the same hit feedback as keys.
+ * Fed live by connectEMG() with frames from emg_bridge.py; any other sensor
+ * source can call it the same way. Rising edges go through onFlexStart(id),
+ * so EMG flexes get the same hit feedback as keys.
  */
 function updateInputsFromEMG(emgData) {
   const now = performance.now();
