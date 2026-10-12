@@ -275,6 +275,7 @@ def main():
     finally:
         running = False
         server.shutdown()
+        server.server_close()  # release the listening socket
         # The reader is a daemon thread, so it would be killed mid-loop on exit.
         # Give it a moment to stop the stream and release the board cleanly.
         t.join(timeout=3)
