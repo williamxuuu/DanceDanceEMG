@@ -1180,13 +1180,13 @@ document.getElementById("calBackBtn").addEventListener("click", () => showOverla
    CALIBRATION LIVE BARS
    ----------------------------------------------------------------------------
    While the calibration screen is open, animate each muscle's live level bar.
-   This demonstrates the threshold visually. With real EMG, emgLevels[] would be
-   fed by updateInputsFromEMG(); here keys drive a value toward 0/1 smoothly.
+   This demonstrates the threshold visually. emgLevels[] holds the smoothed EMG
+   value from updateInputsFromEMG(); key presses set it straight to 0 or 1.
    ============================================================================ */
 function calibrationTick() {
   if (!overlays.calibration.classList.contains("hidden")) {
     LANES.forEach((lane) => {
-      // smooth the displayed level toward the raw input for a natural EMG feel
+      // bar width tracks the current level (already smoothed for EMG input)
       const target = emgLevels[lane.id];
       const fill = document.querySelector(`[data-fill="${lane.id}"]`);
       if (fill) fill.style.width = (target * 100) + "%";
