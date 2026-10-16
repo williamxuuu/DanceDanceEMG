@@ -73,6 +73,7 @@ running = True
 
 
 def find_serial_port():
+    """Return SERIAL_PORT if set, else the first USB-serial port found for this OS."""
     if SERIAL_PORT:
         return SERIAL_PORT
     if sys.platform == "darwin":
