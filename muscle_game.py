@@ -34,6 +34,7 @@ RAIL_UV = 187500.0          # ADS1299 full-scale at gain 24 -> railed channel
 
 
 def find_serial_port():
+    """Return SERIAL_PORT if set, else the first USB-serial port found for this OS."""
     if SERIAL_PORT:
         return SERIAL_PORT
     if sys.platform == "darwin":
