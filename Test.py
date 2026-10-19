@@ -1,3 +1,20 @@
+"""
+Live EMG viewer for the Cerelog ESP-EEG board (electrode / wiring check).
+
+Plots the filtered bipolar EMG (grey) and a smoothed activation envelope
+(yellow) for each muscle, so you can confirm the electrodes pick up a flex
+before running muscle_game.py or emg_bridge.py. Prints a warning about once a
+second if any channel is saturated (usually a missing SRB1 reference).
+
+Wiring (same as muscle_game.py / emg_bridge.py):
+    Bicep    = port 1 - port 2
+    Shoulder = port 3 - port 4
+    Plus the SRB1 reference electrode and the BIAS electrode.
+
+Run (needs pyqtgraph in addition to brainflow and numpy):
+    /Users/williamxu/.pyenv/versions/3.14.0/bin/python "Test.py"
+"""
+
 import glob
 import sys
 import time
