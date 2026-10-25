@@ -97,6 +97,7 @@ def record_window(board, sampling_rate, channels, seconds):
 
 
 def countdown(prefix, seconds):
+    """Print an in-place "prefix N..." countdown, one tick per second, then clear the line."""
     for s in range(int(seconds), 0, -1):
         print(f"\r  {prefix} {s}...", end="", flush=True)
         time.sleep(1)
