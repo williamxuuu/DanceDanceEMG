@@ -140,7 +140,6 @@ def measure_levels(board, sampling_rate, exg, window_samples):
 
 def reader_thread():
     """Connect, calibrate a rest baseline, then stream normalized activation."""
-    global running
     print("Connecting to Cerelog board...")
     board = connect()
     sampling_rate = BoardShim.get_sampling_rate(BoardIds.CERELOG_X8_BOARD.value)
