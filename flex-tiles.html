@@ -438,8 +438,8 @@
       <div class="title" style="font-size:34px;">EMG CALIBRATION</div>
       <div class="subtitle">
         Set the activation threshold for each muscle. A muscle counts as "flexed"
-        when its EMG signal rises above its threshold. (Bars below are a live demo —
-        hold the lane keys to drive them.)
+        when its EMG signal rises above its threshold. (Bars show the live EMG level
+        from emg_bridge.py, or hold the lane keys to drive them.)
       </div>
       <div id="calRows"></div>
       <button class="btn" id="calBackBtn">◀ BACK</button>
@@ -496,7 +496,7 @@ const inputState = {
   leftShoulder: false,
 };
 
-// Latest raw EMG magnitudes (0..1). Used by the calibration screen + thresholds.
+// Latest smoothed EMG magnitudes (0..1). Used by the calibration screen + thresholds.
 const emgLevels = {
   leftBicep: 0, leftShoulder: 0,
 };
